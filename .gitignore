@@ -1,0 +1,11 @@
+# SEGREDOS - nunca subir
+.env
+tokens.json
+
+# dados da conta (precos, produtos)
+backup_*.json
+app/backups/
+app/config.json
+
+__pycache__/
+*.pyc

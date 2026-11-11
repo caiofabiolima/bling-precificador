@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="pt-br"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Precificador Bling</title>
+<style>
+:root{--bg:#16181c;--card:#1f2228;--line:#2d3139;--tx:#e8eaed;--mut:#9aa0a8;--ok:#3ecf7a;--warn:#f0b429;--bad:#f0605d;--ac:#4a8cff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:14px system-ui,Segoe UI,sans-serif}
+.wrap{max-width:1200px;margin:0 auto;padding:20px 16px}
+h1{font-size:20px;margin:0 0 4px}.sub{color:var(--mut);margin-bottom:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:end}
+label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mut)}
+input,textarea{background:#14161a;color:var(--tx);border:1px solid var(--line);border-radius:6px;padding:7px 9px;font:inherit}
+textarea{width:100%;min-height:62px}
+button{background:var(--ac);color:#fff;border:0;border-radius:6px;padding:8px 14px;font:inherit;cursor:pointer}
+button.sec{background:#2d3139}button.go{background:var(--ok);color:#06210f}button:disabled{opacity:.4;cursor:default}
+#msg{margin:10px 0;color:var(--mut)}.bar{height:5px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:6px}.bar i{display:block;height:100%;background:var(--ac);width:0}
+table{width:100%;border-collapse:collapse}th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{color:var(--mut);font-weight:500;font-size:12px;position:sticky;top:0;background:var(--card)}
+td:nth-child(2),th:nth-child(2),td:nth-child(3),th:nth-child(3){text-align:left}
+td:nth-child(3){white-space:normal;min-width:240px}
+.tbl{max-height:58vh;overflow:auto}.mud{color:var(--warn)}.igual{color:var(--ok)}
+.new{font-weight:600}.mut{color:var(--mut)}.sum{display:flex;gap:18px;margin:8px 0;flex-wrap:wrap}
+</style></head><body><div class="wrap">
+<h1>Precificador Bling → Loja Integrada Varejo</h1>
+<div class="sub">Atacado (preço base do Bling) + % = promocional, arredondado para cima no final ,90. Cheio = promocional + % arredondado.</div>
+
+<div class="card"><div class="row">
+<label>Loja (ID no Bling)<input id="loja" size="12"></label>
+<label>% promocional<input id="pp" size="5"></label>
+<label>% cheio (sobre o promocional)<input id="pc" size="5"></label>
+<label>Final do preço<input id="term" size="5"></label>
+<button class="sec" onclick="salvaCfg()">Salvar regras</button>
+</div></div>
+
+<div class="card">
+<label>Limitar a estes códigos (um por linha ou separados por vírgula; casa pai e tamanhos). Vazio = todos os produtos da loja.
+<textarea id="cods" placeholder="BCTLX-4622&#10;BCTLX-4623"></textarea></label>
+<div class="row" style="margin-top:10px">
+<button id="bScan" onclick="scan()">1. Ler produtos e simular</button>
+<button id="bApply" class="go" onclick="aplicar()" disabled>2. Gravar no Bling</button>
+<label style="margin-left:auto">Desfazer (backup)<span class="row"><select id="bk" style="background:#14161a;color:var(--tx);border:1px solid var(--line);border-radius:6px;padding:7px"></select><button class="sec" onclick="desfazer()">Restaurar</button></span></label>
+</div>
+<div id="msg">Pronto.</div><div class="bar"><i id="pb"></i></div>
+</div>
+
+<div class="card"><div class="sum" id="sum"></div>
+<label style="flex-direction:row;align-items:center;gap:6px;margin-bottom:8px"><input type="checkbox" id="soMuda" checked onchange="draw()"> mostrar só os que precisam mudar</label>
+<div class="tbl"><table><thead><tr><th><input type="checkbox" id="all" checked onchange="tudo(this.checked)"></th><th>Código</th><th>Produto</th><th>Atacado</th><th>Cheio hoje</th><th>Promo hoje</th><th>Cheio novo</th><th>Promo novo</th></tr></thead><tbody id="tb"></tbody></table></div></div>
+</div>
+<script>
+let rows=[],sel=new Set(),poll=null;
+const $=id=>document.getElementById(id), br=v=>v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+async function api(p,b){const r=await fetch(p,b?{method:'POST',body:JSON.stringify(b)}:{});return r.json()}
+async function init(){const c=await api('/api/config');loja.value=c.loja_id;pp.value=c.pct_promo;pc.value=c.pct_cheio;term.value=c.terminacao;bks()}
+async function bks(){const l=await api('/api/backups');bk.innerHTML=l.map(x=>`<option>${x}</option>`).join('')||'<option value="">(nenhum)</option>'}
+async function salvaCfg(){await api('/api/config',{loja_id:+loja.value,pct_promo:+pp.value,pct_cheio:+pc.value,terminacao:term.value});msg.textContent='Regras salvas. Rode "Ler produtos e simular" de novo.'}
+async function scan(){await salvaCfg();rows=[];draw();const r=await api('/api/scan',{codigos:cods.value});if(!r.ok)msg.textContent='Já há uma tarefa rodando.';start()}
+function aplicar(){const ids=[...sel];if(!ids.length)return;if(!confirm(`Gravar preços novos em ${ids.length} vínculos da loja? Um backup é salvo antes.`))return;api('/api/apply',{ids}).then(start)}
+function desfazer(){if(!bk.value)return;if(!confirm('Restaurar os preços do backup '+bk.value+'?'))return;api('/api/undo',{arquivo:bk.value}).then(start)}
+function start(){clearInterval(poll);poll=setInterval(tick,700);tick()}
+async function tick(){const j=await api('/api/job');msg.textContent=j.msg||'Pronto.';pb.style.width=j.total?Math.round(100*j.feitos/j.total)+'%':'0';
+ const busy=j.state==='running';bScan.disabled=busy;
+ if(j.state!=='running'){clearInterval(poll);pb.style.width=j.state==='done'?'100%':'0';rows=j.rows||[];sel=new Set(rows.filter(r=>r.muda).map(r=>r.vinculo));draw();bks()}}
+function draw(){const so=soMuda.checked,v=rows.filter(r=>!so||r.muda);
+ tb.innerHTML=v.map(r=>`<tr><td><input type="checkbox" ${sel.has(r.vinculo)?'checked':''} onchange="tg(${r.vinculo},this.checked)"></td><td>${r.codigo}</td><td>${r.nome}</td><td>${br(r.base)}</td><td class="mut">${br(r.atual_cheio)}</td><td class="mut">${r.atual_promo?br(r.atual_promo):'—'}</td><td class="new ${r.muda?'mud':'igual'}">${br(r.novo_cheio)}</td><td class="new ${r.muda?'mud':'igual'}">${br(r.novo_promo)}</td></tr>`).join('');
+ const m=rows.filter(r=>r.muda).length;sum.innerHTML=rows.length?`<span>${rows.length} produtos lidos</span><span class="mud">${m} precisam mudar</span><span class="igual">${rows.length-m} já corretos</span><span>${sel.size} selecionados</span>`:'';
+ bApply.disabled=!sel.size}
+function tg(id,on){on?sel.add(id):sel.delete(id);draw()}
+function tudo(on){sel=new Set(on?rows.filter(r=>r.muda).map(r=>r.vinculo):[]);draw()}
+init();
+</script></body></html>
